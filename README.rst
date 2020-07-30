@@ -8,6 +8,7 @@ Introduction
 
 This library provides a  Python interface to access DWD weatherforecast data to project solar power generation:
 It will extract the following data from a MOSMIX file -see further down below for specifications
+
 * Rad1h
 * TTT
 * PPPP
