@@ -1,5 +1,5 @@
 dwdforecast
-==========
+===========
 
 
 
@@ -14,7 +14,17 @@ It will extract the following data from a MOSMIX file -see further down below fo
 * PPPP
 * FF
 
-It has been tested with Python version 3.5, 3.6, 3.7 and 3.8.
+It uses pvlib to leverage the parameters above in conjunction with a configurable solar system and present hourly forecast the next 10 days.
+Forecast data contains:
+
+* ACSim: Simulated AC of solar system
+* DCSim: Simulated DC of solar system
+* CellTempSim: Temperature of solar cells [°C]
+* Rad1Energy: Simplified calculation of solar system´s power generation
+
+
+
+It has been tested with Python version 3.6.2, 3.7.3 
 
 Tested with 
 ~~~~~~~~~~~~~~~~
@@ -29,7 +39,7 @@ Clone / Download repo and use dwdforecast.py
 
 
 Configuration
-------------
+-------------
 
 To adapt to your needs - familiarize yourself with the content of data we are about to parse  (Keyword : Mosmix):
 https://www.dwd.de/DE/leistung…_blob=publicationFile&v=3
@@ -42,6 +52,8 @@ https://wettwarn.de/mosmix/mosmix.html
 
 Once you found the closest station, note the number and change the python script in the inline comments to your needs
 
+Next major section is the configuration is to change the solar system´s ke characteristics such as location, azimuth, elevation, inverter, pannels etc.
+Please see inline comments in script for more detail.
 
 python dwdforecast.py
 
@@ -52,6 +64,11 @@ Features
 * Supports two modes of operation
 *   Simple : will query the DWD internet site once and pull the data
 *   Complex: will run in a continuous loop to gather data and download when updates are available 
+
+* Output (configurable):
+- Printoutput
+- CSV Output
+- Upload to mariaDB
 
 
 
