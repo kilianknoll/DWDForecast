@@ -154,8 +154,8 @@ class dwdforecast(threading.Thread):
         self.sandia_modules = pvlib.pvsystem.retrieve_sam('cecmod')
         self.sandia_module = self.sandia_modules['LG_Electronics_Inc__LG335E1C_A5'] # is "LG Electronics Inc. LG335E1C-A5" in sam-library-cec-modules-2019-03-05.csv
         self.cec_inverters = pvlib.pvsystem.retrieve_sam('cecinverter')
-        self.cec_inverter = self.cec_inverters['Kostal__Plenticore_plus_10']
-        #self.cec_inverter = self.cec_inverters['SMA_America__SB10000TL_US__240V_']  # is "SMA America: SB10000TL-US [240V]" in sam-library-cec-inverters-2019-03-05.csv         
+        #self.cec_inverter = self.cec_inverters['Kostal__Plenticore_plus_10']
+        self.cec_inverter = self.cec_inverters['SMA_America__SB10000TL_US__240V_']  # is "SMA America: SB10000TL-US [240V]" in sam-library-cec-inverters-2019-03-05.csv         
         #
         # Which output do you want the script to generate ?
         self.PrintOutput = 1                                #0 = no output 1 = print output 
