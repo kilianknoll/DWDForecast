@@ -52,10 +52,12 @@ https://wettwarn.de/mosmix/mosmix.html
 
 Once you found the closest station, note the number and change the python script in the inline comments to your needs
 
-Next major section is the configuration is to change the solar system´s ke characteristics such as location, azimuth, elevation, inverter, pannels etc.
-Please see inline comments in script for more detail.
+Next major section is the configuration is to change the solar system´s key characteristics such as location, azimuth, elevation, inverter, pannels etc.
+Please see configuration.ini file for more description.
 
-python dwdforecast.py
+Running the script
+------------------
+python3 dwdforecast.py
 
 Features
 ~~~~~~~~

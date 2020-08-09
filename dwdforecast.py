@@ -83,6 +83,8 @@
 # also requires scipy - easiest way on e.g. raspberry is:
 # sudo apt-get install python3-numpy python3-scipy
 #
+# Update 2 August 9
+# Extracted all configuration parameters into an external file "configuration.ini" so users do not need to mess around in the actual python script
 
 
 import urllib.request
@@ -97,6 +99,8 @@ import queue
 import threading
 import logging
 import pprint
+import configparser
+
 
 import numpy as np
 import pandas as pd
@@ -128,67 +132,51 @@ def loggerdate():
 # Main class that holds the required information 
 class dwdforecast(threading.Thread):
     def __init__ (self, myqueue):
-        print ("Starting dwdforecast init ...")          
-        # You need to change Parameters to adjust to your environment:
-        self.mystation= 'P755'                              # See description above how to find your station 
-        # Only use the "all_stations" if you got decent hardware
-        #self.urlpath = 'http://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_S/all_stations/kml'
-        #On Raspberries & alikes, use the one for your specific station: 
-        self.urlpath = 'http://opendata.dwd.de/weather/local_forecasts/mos/MOSMIX_L/single_stations/P755/kml'
-        self.sleeptime = 15                                 #Time interval we poll the server [seconds]- please increase time since updates from DWD are hourly at best
-        # Your solar plant location data goes here :
-        self.mylongitude = 11.600000                        #GPS longitude data of your plant 
-        self.mylatitude = 48.1000000                         #GPS latitude data of your plant 
-        self.myaltitude = 491                               #Elevation [m] above sea
-        self.mytimezone = 'Europe/Berlin'                   #Timezone of plant location 
-        self.mypv_elevation = 35                            #Inclination angle of solar panels
-        self.mypv_azimuth = 177                             #Orientation - where 270=West, 180=South, 90=Eaat
-        self.PVtotalEfficiency = 0.002391571                #Only needed for crude DWD only based calculation from Rad1h to actual powergen. This is used for Rad1Energy calculation. 
-        #Parameter setup for your plant
-        # Note: once you installed pvlib on your system, please have a look at the ...\pvlib\data directory and open the corresponding csv files to find your inverter / solar panel
-        
-        # Please also substitute any special character that you find in the csv file and replace it with underscores _ in the definitions below.
-        # Once you made changes to the csv file, put the changes into where pvlib data is installed to - e.g.:
-        #/usr/local/lib/python3.5/dist-packages/pvlib/data
-        #
-        self.sandia_modules = pvlib.pvsystem.retrieve_sam('cecmod')
-        self.sandia_module = self.sandia_modules['LG_Electronics_Inc__LG335E1C_A5'] # is "LG Electronics Inc. LG335E1C-A5" in sam-library-cec-modules-2019-03-05.csv
-        self.cec_inverters = pvlib.pvsystem.retrieve_sam('cecinverter')
-        #self.cec_inverter = self.cec_inverters['Kostal__Plenticore_plus_10']
-        self.cec_inverter = self.cec_inverters['SMA_America__SB10000TL_US__240V_']  # is "SMA America: SB10000TL-US [240V]" in sam-library-cec-inverters-2019-03-05.csv         
-        #
-        # Which output do you want the script to generate ?
-        self.PrintOutput = 1                                #0 = no output 1 = print output 
-        self.CSVOutput = 1                                  #0 = no output 1 = output to csv file 
-        self.CSVFile = 'outputdwdforecast.csv'              #CSV filename 
-        self.DBOutput = 0                                   #0 = no output 1 = output to mariaDB 
-        #Existance of a mariaDB is required 
-        if (self.DBOutput ==1):
-            self.db = mysql.connector.connect(user='yourdbuser',passwd="yourdbpwd", host='192.168.178.39', database='yourdbname',autocommit=True)           #Connect string to the database - we are setting
-            self.cur = self.db.cursor()   
-        #
-        """
-        A Table with the following definition is what we are populating to:
-        describe dwd;
-        +-------------+------------+------+-----+---------+-------+
-        | Field       | Type       | Null | Key | Default | Extra |
-        +-------------+------------+------+-----+---------+-------+
-        | mydatetime  | datetime   | NO   | PRI | NULL    |       |
-        | mytimestamp | int(11)    | NO   | PRI | 0       |       |
-        | Rad1h       | float(8,2) | NO   |     | 0.00    |       |
-        | PPPP        | float(8,2) | NO   |     | 0.00    |       |
-        | FF          | float(5,2) | NO   |     | 0.00    |       |
-        | TTT         | float(5,2) | NO   |     | 0.00    |       |
-        | Rad1wh      | float(8,2) | NO   |     | 0.00    |       |
-        | Rad1Energy  | float(8,2) | NO   |     | 0.00    |       |
-        | ACSim       | float(8,2) | NO   |     | 0.00    |       |
-        | DCSim       | float(8,2) | NO   |     | 0.00    |       |
-        | CellTempSim | float(5,2) | NO   |     | 0.00    |       |
-        +-------------+------------+------+-----+---------+-------+
-        """
-        #
-        # No more configurable stuff beyond this point 
-        # XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+        try:
+            print ("Starting dwdforecast init ...")   
+            self.config = configparser.ConfigParser()
+            self.config.read('configuration.ini')
+            self.config.sections()
+            self.mystation = (self.config.get('DWD', 'DWDStation', raw=True))
+            self.urlpath = (self.config.get('DWD', 'DWDStationURL', raw=True))
+            self.mylongitude = (self.config.getfloat('SolarSystem', 'Longitute', raw=True))
+            self.mylatitude = (self.config.getfloat('SolarSystem', 'Latitude', raw=True))
+            self.myaltitude = (self.config.getfloat('SolarSystem', 'Altitude', raw=True))
+            self.mypv_elevation = (self.config.getfloat('SolarSystem', 'Elevation', raw=True))
+            self.mypv_azimuth = (self.config.getfloat('SolarSystem', 'Azimuth', raw=True))
+            self.myNumPanels = (self.config.getint('SolarSystem', 'NumPanels', raw=True))
+            self.myNumStrings = (self.config.getint('SolarSystem', 'NumStrings', raw=True))
+            self.myalbedo = (self.config.getfloat('SolarSystem', 'Albedo', raw=True))
+            self.myinverter = (self.config.get('SolarSystem', 'InverterName', raw=True))
+            self.mymodule = (self.config.get('SolarSystem', 'ModuleName', raw=True))
+            self.mysimplemultiplicationfactor = (self.config.getfloat('SolarSystem', 'SimpleMultiplicationFactor', raw=True))
+            self.TemperatureOffset = (self.config.getfloat('SolarSystem', 'TemperatureOffset', raw=True))
+            self.mytimezone = (self.config.get('SolarSystem', 'MyTimezone', raw=True))
+            self.sleeptime = (self.config.getint('Processing', 'Sleeptime', raw=True))
+            
+            self.PrintOutput = (self.config.getint('Output', 'PrintOutput', raw=True))
+            self.CSVOutput = (self.config.getint('Output', 'CSVOutput', raw=True))
+            self.DBOutput = (self.config.getint('Output', 'DBOutput', raw=True))
+            self.CSVFile = (self.config.get('Output', 'CSVFile', raw=True))
+            self.DBUser = (self.config.get('Output', 'DBUser', raw=True))
+            self.DBPassword = (self.config.get('Output', 'DBPassword', raw=True))
+            self.DBHost = (self.config.get('Output', 'DBHost', raw=True))
+            self.DBName = (self.config.get('Output', 'DBName', raw=True))
+            self.DBTable = (self.config.get('Output', 'DBTable', raw=True))
+            
+            self.sandia_modules = pvlib.pvsystem.retrieve_sam('cecmod')
+            self.sandia_module = self.sandia_modules[self.mymodule] # is "LG Electronics Inc. LG335E1C-A5" in sam-library-cec-modules-2019-03-05.csv
+            self.cec_inverters = pvlib.pvsystem.retrieve_sam('cecinverter')
+            self.cec_inverter = self.cec_inverters[self.myinverter]
+            #self.cec_inverter = self.cec_inverters['SMA_America__SB10000TL_US__240V_']  # is "SMA America: SB10000TL-US [240V]" in sam-library-cec-inverters-2019-03-05.csv         
+ 
+            if (self.DBOutput ==1):
+                self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
+                self.cur = self.db.cursor() 
+                print ("I have set my DB connection")
+        except Exception as ErrorConfigParse:
+            logging.error("%s %s",",GetURLForLatest Error getting data from the internet:", ErrorConfigParse)
+            print ("Hit error during configparse ", ErrorConfigParse)
         self.mypvliblocation   = Location(latitude  = self.mylatitude, 
                            longitude = self.mylongitude,
                            tz        = self.mytimezone,
@@ -207,9 +195,9 @@ class dwdforecast(threading.Thread):
                                         inverter                                    = self.cec_inverter,
                                         module_parameters                           = self.sandia_module,
                                         inverter_parameters                         = self.cec_inverter,
-                                        albedo                                      = 0.15,
-                                        modules_per_string                          = 14,
-                                        strings_per_inverter                        = 2)        
+                                        albedo                                      = self.myalbedo,
+                                        modules_per_string                          = self.myNumPanels,
+                                        strings_per_inverter                        = self.myNumStrings)        
                 
                 
         
@@ -519,23 +507,32 @@ class dwdforecast(threading.Thread):
                             logging.error ("%s %s", ",subroutine dwdforecast final exception : ", ErrorPrintOutput)
                     #------------------------------------------
                     # START Processing data for PVLIB
-                    try:                        
+                    try:      
+                        
                         self.mycolumns= {'mydatetime':np.array(self.mosmixdata[0]),'myTZtimestamp':np.array(self.mosmixdata[1]),'Rad1h':np.array(self.mosmixdata[2]),'TTT':np.array(self.mosmixdata[3]),'PPPP':np.array(self.mosmixdata[4]),'FF':np.array(self.mosmixdata[5])}
                         self.PandasDF= pd.DataFrame(data=self.mycolumns)
                         self.PandasDF.Rad1h = self.PandasDF.Rad1h.astype(float) #Need to ensure we get a float value from Rad1h
+                        
                         self.PandasDF.FF = self.PandasDF.FF.astype(float)
                         self.PandasDF.PPPP = self.PandasDF.PPPP.astype(float)
+                        self.PandasDF.TTT = self.PandasDF.TTT.astype(float)+self.TemperatureOffset
                         self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h  #Converting from KJ/m² to Wh/m² -and adding as new column Rad1wh
                         self.PandasDF.myTZtimestamp = pd.to_datetime(pd.Series(self.PandasDF.myTZtimestamp))
                         # A horrific hack to get the time series working
                         self.first = self.PandasDF.myTZtimestamp.iloc[0]
                         self.last  = self.PandasDF.myTZtimestamp.index[-1]
                         self.last  = self.PandasDF.myTZtimestamp.iloc[self.last]
+                        
+                        
                         #Gathering time series from start - and end hours (240 rows):
                         self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz='Europe/Berlin')
+                        
                         self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h
-                        self.PandasDF['Rad1Energy'] = self.PVtotalEfficiency*self.PandasDF.Rad1h
+                        
+                        self.PandasDF['Rad1Energy'] = self.mysimplemultiplicationfactor*self.PandasDF.Rad1h
+                        
                         self.PandasDF.index = self.local_timestamp
+                        
                         #Now creating list of unixtimestamps
                         self.local_unixtimestamp= []
                         self.i = 0 
@@ -543,6 +540,7 @@ class dwdforecast(threading.Thread):
                             self.local_unixtimestamp.append(time.mktime(self.local_timestamp[self.i].timetuple()))
                             self.i = self.i+1                      
                         self.PandasDF['mytimestamp'] = np.array(self.local_unixtimestamp)
+                        
 
                         # =============================================================================
                         # STARTING  SOLAR POSITION AND ATMOSPHERIC MODELING
@@ -551,7 +549,8 @@ class dwdforecast(threading.Thread):
                                                                                 latitude  = self.mylatitude,
                                                                                 longitude = self.mylongitude,
                                                                                 altitude  = self.myaltitude)
-                        self.myGHI =self.PandasDF.Rad1wh                      
+                        self.myGHI =self.PandasDF.Rad1wh 
+                        
                         # DNI and DHI calculation from GHI data
                         self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.065, max_zenith=87, max_airmass=12)
                         self.DHI = self.PandasDF.Rad1wh - self.DNI.dni*np.cos(np.radians(self.solpos.zenith.values))
@@ -566,6 +565,7 @@ class dwdforecast(threading.Thread):
                         #modelchain provides DC data too - but no doc was found for the other values below
                         #i_sc        v_oc          i_mp        v_mp         p_mp           i_x          i_xx
                         self.PandasDF['DCSim']= self.myModelChain.dc.p_mp
+                        
                         if (self.CSVOutput ==1):
                             try:
                                 self.PandasDF.to_csv(self.CSVFile)
@@ -584,34 +584,24 @@ class dwdforecast(threading.Thread):
                         # STARTING  Database Processing
                         # =============================================================================
                         if (self.DBOutput == 1):
-                            self.Databaselasttimestamp= self.findlastDBtimestamp(self.cur, "dwd")
-                            print ("self.Databaselasttimestamp",self.Databaselasttimestamp)
+                            self.Databaselasttimestamp= self.findlastDBtimestamp(self.cur, self.DBTable)
+                            
                             self.PandasDFFirstTimestamp = self.PandasDF['mytimestamp'].iloc[0]
-                            self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, "dwd", int(self.PandasDFFirstTimestamp))
-                            print ("self.Database_found_filetimestamp",self.Database_found_filetimestamp)
+                            self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, self.DBTable, int(self.PandasDFFirstTimestamp))
+                            
                             self.indexcounter_addrows=0     #pure initialization
                             self.MyWeathervalues ={}
                             for index, row in self.PandasDF.iterrows():
                                 self.PandasDFFirstTimestamp = row['mytimestamp']
-                                self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, "dwd", int(self.PandasDFFirstTimestamp))
+                                self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, self.DBTable, int(self.PandasDFFirstTimestamp))
                                 if (self.Database_found_filetimestamp ==0):
                                     self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
-                                    self.addsingleRow2DB(self.cur, "dwd", self.MyWeathervalues)
-                                """    
-                                if (self.Databaselasttimestamp == int(row['mytimestamp'])): # We already have this timestamp in the database
-                                    self.indexcounter_addrows = self.indexcounter_addrows+1
-                                    print ("We have in DB",self.Databaselasttimestamp)
-
-                                if (self.Database_found_filetimestamp == 0):                             #Meaning We did not find any data in the database table - so we just "add"
-                                    print ("Populating clean table ??", self.Database_found_filetimestamp, )
-                                    self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
-                                    self.addsingleRow2DB(self.cur, "dwd", self.MyWeathervalues)
-                                """                                    
+                                    self.addsingleRow2DB(self.cur, self.DBTable, self.MyWeathervalues)
                                 if (self.Database_found_filetimestamp == 1):                           #Meaning we found the timestamp and need to update from the point onward...
                                     self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
                                     #self.updatesingleRowinDB(self.cur, "dwd",
                                     #self.updatesingleRowinDB(self.cur, "dwd", TTT, Rad1h, FF, PPPP, mytimestamp, Rad1Energy, ACSim, DCSim, CellTempSim)
-                                    self.updatesingleRowinDB(self.cur, "dwd", row['TTT'], row['Rad1h'], row['FF'], row['PPPP'], row['mytimestamp'], row['Rad1Energy'], row['ACSim'], row['DCSim'], row['CellTempSim'], row['Rad1wh'])
+                                    self.updatesingleRowinDB(self.cur, self.DBTable, row['TTT'], row['Rad1h'], row['FF'], row['PPPP'], row['mytimestamp'], row['Rad1Energy'], row['ACSim'], row['DCSim'], row['CellTempSim'], row['Rad1wh'])
                         # =============================================================================                            
                         self.myTZtimestamp = connvertINTtimestamptoDWD(self.mynewtime)
                         logging.debug ("%s %s %s %s", ",Subroutine dwdforecast -we have used DWD file from time : ", self.mynewtime, " ", self.myTZtimestamp)
