@@ -85,6 +85,9 @@
 #
 # Update 2 August 9
 # Extracted all configuration parameters into an external file "configuration.ini" so users do not need to mess around in the actual python script
+#
+# Update August 12 2020
+# Fix screw up of Rad1Energy calculation 
 
 
 import urllib.request
@@ -529,7 +532,7 @@ class dwdforecast(threading.Thread):
                         
                         self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h
                         
-                        self.PandasDF['Rad1Energy'] = self.mysimplemultiplicationfactor*self.PandasDF.Rad1h
+                        self.PandasDF['Rad1Energy'] = self.mysimplemultiplicationfactor*self.PandasDF.Rad1wh
                         
                         self.PandasDF.index = self.local_timestamp
                         
