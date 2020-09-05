@@ -88,6 +88,8 @@
 #
 # Update August 12 2020
 # Fix screw up of Rad1Energy calculation 
+# Update September 5 2020
+# Adjust Timezones to reflect DWD data (GMT timestamp), Change to ERBS simulation model 
 
 
 import urllib.request
@@ -528,7 +530,7 @@ class dwdforecast(threading.Thread):
                         
                         
                         #Gathering time series from start - and end hours (240 rows):
-                        self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz='Europe/Berlin')
+                        self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz=self.mytimezone)
                         
                         self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h
                         
@@ -555,9 +557,11 @@ class dwdforecast(threading.Thread):
                         self.myGHI =self.PandasDF.Rad1wh 
                         
                         # DNI and DHI calculation from GHI data
-                        self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.065, max_zenith=87, max_airmass=12)
-                        self.DHI = self.PandasDF.Rad1wh - self.DNI.dni*np.cos(np.radians(self.solpos.zenith.values))
-                        self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
+                        self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.0065, max_zenith=89.9, max_airmass=12)
+                        #self.DHI = self.PandasDF.Rad1wh - self.DNI.dni*np.cos(np.radians(self.solpos.zenith.values))
+                        self.DHI = pvlib.irradiance.erbs(ghi=self.PandasDF.Rad1wh, zenith= self.solpos.zenith, datetime_or_doy = self.local_timestamp, min_cos_zenith=0.065, max_zenith=89.9)
+                        #self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
+                        self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI.dhi,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
                         self.mc_weather   = pd.DataFrame(data=self.dataheader)
                         self.mc_weather.index =self.local_timestamp 
                         #Simulating the PV system using pvlib modelchain 
