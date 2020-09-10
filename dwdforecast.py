@@ -89,7 +89,9 @@
 # Update August 12 2020
 # Fix screw up of Rad1Energy calculation 
 # Update September 5 2020
-# Adjust Timezones to reflect DWD data (GMT timestamp), Change to ERBS simulation model 
+# Adjust Timezones to reflect DWD data (GMT timestamp), Change to ERBS simulation model
+# Update September 10 2020
+# Improved Error Messaging as well as Parameters for PV Systems with East/West orientation
 
 
 import urllib.request
@@ -557,9 +559,9 @@ class dwdforecast(threading.Thread):
                         self.myGHI =self.PandasDF.Rad1wh 
                         
                         # DNI and DHI calculation from GHI data
-                        self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.0065, max_zenith=89.9, max_airmass=12)
+                        self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.9, max_zenith=80, max_airmass=12)
                         #self.DHI = self.PandasDF.Rad1wh - self.DNI.dni*np.cos(np.radians(self.solpos.zenith.values))
-                        self.DHI = pvlib.irradiance.erbs(ghi=self.PandasDF.Rad1wh, zenith= self.solpos.zenith, datetime_or_doy = self.local_timestamp, min_cos_zenith=0.065, max_zenith=89.9)
+                        self.DHI = pvlib.irradiance.erbs(ghi=self.PandasDF.Rad1wh, zenith= self.solpos.zenith, datetime_or_doy = self.local_timestamp, min_cos_zenith=0.9, max_zenith=80)
                         #self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
                         self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI.dhi,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
                         self.mc_weather   = pd.DataFrame(data=self.dataheader)
@@ -572,19 +574,23 @@ class dwdforecast(threading.Thread):
                         #modelchain provides DC data too - but no doc was found for the other values below
                         #i_sc        v_oc          i_mp        v_mp         p_mp           i_x          i_xx
                         self.PandasDF['DCSim']= self.myModelChain.dc.p_mp
-                        
+                        # =============================================================================
+                        # STARTING  Database Processing
+                        # =============================================================================                        
                         if (self.CSVOutput ==1):
                             try:
-                                self.PandasDF.to_csv(self.CSVFile)
+                                self.mc_weatherANDPandasDF = pd.concat([ self.mc_weather,self.PandasDF],axis=1).reindex(self.PandasDF.index)
+                                #self.PandasDF.to_csv(self.CSVFile)
+                                self.mc_weatherANDPandasDF.to_csv(self.CSVFile)
                             except Exception as ErrorCSVOutput:
-                                print ("Shit happened  ?", ErrorCSVOutput)
+                                print ("Error Creating CSV Output", ErrorCSVOutput)
                                 logging.error ("%s %s", ",subroutine dwdforecast  exception during CSVOutput : ", ErrorCSVOutput)
                         if (self.PrintOutput == 1):
                             try:
                                 print ("Here are the combined results from DWD - as well as PVLIB:")
                                 print (self.PandasDF)
                             except Exception as ErrorPrintOutput:
-                                print ("Shit happened  ?", ErrorPrintOutput)
+                                print ("Error Creating Print Output", ErrorPrintOutput)
                                 logging.error ("%s %s", ",subroutine dwdforecast  exception during CSVOutput : ", ErrorPrintOutput)
 
                         # =============================================================================
@@ -613,7 +619,7 @@ class dwdforecast(threading.Thread):
                         self.myTZtimestamp = connvertINTtimestamptoDWD(self.mynewtime)
                         logging.debug ("%s %s %s %s", ",Subroutine dwdforecast -we have used DWD file from time : ", self.mynewtime, " ", self.myTZtimestamp)
                     except Exception as ErrorDWDArray:
-                        print ("Shit happened  ?", ErrorDWDArray)
+                        print ("Error processing DWDArray", ErrorDWDArray)
                         logging.error ("%s %s", ",subroutine dwdforecast final exception : ", ErrorDWDArray)
                     logging.debug("%s %s", "From dwdforecast - we have found a true commit and have updated the database at the following dwd time :", self.mynewtime)
                     time.sleep(self.sleeptime)          # We are putting in a sleep 
@@ -661,13 +667,13 @@ if __name__ == "__main__":
             
         try:
             while i <1: 
-                if not myQueue1.empty():                                      # Falls was in der Queue steht machen wir was
-                    quelength = myQueue1.qsize()                               # Wenn da viele Werte angelaufen sind, nehmen wir jetzt einfach den Letzten
-                    #print ("LAENGE der QUEUE -XXXXXXXXXXXXXXXXXXXXXXX : ", quelength) 
+                if not myQueue1.empty():                                      # Do something if we have queue entries
+                    quelength = myQueue1.qsize()                               # In case multiple values are in queue, take last one
+                    #print ("Length of Queue : ", quelength) 
                     logging.info("%s %s " ,",Main :Queue length is : ", quelength) 
                     
                     for x in range (0,quelength):
-                        LastDWDtimestamp = myQueue1.get()                     # Das ist die magische Zeile in der wir den Wert aus der Queue abholen 
+                        LastDWDtimestamp = myQueue1.get()                     # Get stuff from queue 
                         mylasttimestamp = connvertINTtimestamptoDWD(LastDWDtimestamp)
                     print ("From Main : DWD File access I checked /  got uploaded by DWD was at :", LastDWDtimestamp,mylasttimestamp )
                 if (Interaction == 'Simple'):   
@@ -680,7 +686,7 @@ if __name__ == "__main__":
             myThread1.event.set()
             print ("Closing thread & exiting")
         except KeyboardInterrupt:
-            #Abfangen, wenn der Anwender Ctrl-C drueckt 
+            #In case user hits CTRL-C 
             print (" Sub - User is trying to kill me ...  \n") 
             myThread1.event.set()
             print ("Thread from Sub ... stopped")
