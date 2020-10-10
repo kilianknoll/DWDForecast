@@ -92,6 +92,16 @@
 # Adjust Timezones to reflect DWD data (GMT timestamp), Change to ERBS simulation model
 # Update September 10 2020
 # Improved Error Messaging as well as Parameters for PV Systems with East/West orientation
+#
+# Update October 10 2020
+# Updated documentation of configuration.ini
+# Updated treatment of inconsisitencies of different API calls for different pvlib versions (pvlib version 0.7.2 vs. 0.8.0):
+# for 0.8.0:
+# self.myModelChain.run_model(self.mc_weather)
+# for 0.7.2:
+# self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)
+# 
+
 
 
 import urllib.request
@@ -547,7 +557,6 @@ class dwdforecast(threading.Thread):
                             self.local_unixtimestamp.append(time.mktime(self.local_timestamp[self.i].timetuple()))
                             self.i = self.i+1                      
                         self.PandasDF['mytimestamp'] = np.array(self.local_unixtimestamp)
-                        
 
                         # =============================================================================
                         # STARTING  SOLAR POSITION AND ATMOSPHERIC MODELING
@@ -557,7 +566,6 @@ class dwdforecast(threading.Thread):
                                                                                 longitude = self.mylongitude,
                                                                                 altitude  = self.myaltitude)
                         self.myGHI =self.PandasDF.Rad1wh 
-                        
                         # DNI and DHI calculation from GHI data
                         self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.9, max_zenith=80, max_airmass=12)
                         #self.DHI = self.PandasDF.Rad1wh - self.DNI.dni*np.cos(np.radians(self.solpos.zenith.values))
@@ -568,7 +576,22 @@ class dwdforecast(threading.Thread):
                         self.mc_weather.index =self.local_timestamp 
                         #Simulating the PV system using pvlib modelchain 
                         self.myModelChain = ModelChain(self.mysolarsystem, self.mypvliblocation,aoi_model='no_loss',orientation_strategy="None",spectral_model='no_loss')
-                        self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)
+                        #pvlib has changed their APIs between versions ... need to deal with it ...:
+                        try:
+                            if (pvlib.__version__ == "0.8.0"):
+                                self.myModelChain.run_model(self.mc_weather)                              
+                                print ("XXXXXXXXXXXXXXXXX 6")
+                            elif (pvlib.__version__ == "0.7.2"):
+                                print ("Starting with myModelChain calculation with version 0.7.2 of pvlib... ")
+                                self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)
+                                print ("Done ...................")
+                            else:
+                                print ("Trying an untested version of pvlib", pvlib.__version__)
+                                self.myModelChain.run_model(self.mc_weather)
+                        except Exception as ErrorWeather:
+                            print ("Error after run_model", ErrorWeather, "Pvlib Version is : ", pvlib.__version__)
+                            logging.error ("%s %s %s", ",Error after run_model : ", ErrorWeather, pvlib.__version__)
+                        print ("After Weather check....")
                         self.PandasDF['ACSim']= self.myModelChain.ac
                         self.PandasDF['CellTempSim']= self.myModelChain.cell_temperature
                         #modelchain provides DC data too - but no doc was found for the other values below
