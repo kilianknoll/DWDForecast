@@ -106,7 +106,7 @@
 #
 # Update October 18 2020
 # Remove support for pvlib version older than 0.8.0
-# Added additional configuration parameter: TEMPERATURE_MODEL_PARAMETERS
+# Added additional configuration parameter: TEMPERATURE_MODEL_PARAMETERS for proper pvlib 0.8 support 
 
 
 import urllib.request
