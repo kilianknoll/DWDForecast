@@ -101,7 +101,12 @@
 # for 0.7.2:
 # self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)
 # 
-
+# Update October 12
+# Updated to be able to specify the port for the database connection
+#
+# Update October 18 2020
+# Remove support for pvlib version older than 0.8.0
+# Added additional configuration parameter: TEMPERATURE_MODEL_PARAMETERS
 
 
 import urllib.request
@@ -126,6 +131,7 @@ import pvlib
 from pvlib.pvsystem import PVSystem
 from pvlib.location import Location
 from pvlib.modelchain import ModelChain
+from pvlib.temperature import TEMPERATURE_MODEL_PARAMETERS
 import mysql.connector
 from mysql.connector import Error
 from mysql.connector import errorcode
@@ -164,6 +170,7 @@ class dwdforecast(threading.Thread):
             self.myNumPanels = (self.config.getint('SolarSystem', 'NumPanels', raw=True))
             self.myNumStrings = (self.config.getint('SolarSystem', 'NumStrings', raw=True))
             self.myalbedo = (self.config.getfloat('SolarSystem', 'Albedo', raw=True))
+            self.mytemperature_model = (self.config.get('SolarSystem', 'TEMPERATURE_MODEL', raw=True))
             self.myinverter = (self.config.get('SolarSystem', 'InverterName', raw=True))
             self.mymodule = (self.config.get('SolarSystem', 'ModuleName', raw=True))
             self.mysimplemultiplicationfactor = (self.config.getfloat('SolarSystem', 'SimpleMultiplicationFactor', raw=True))
@@ -179,8 +186,11 @@ class dwdforecast(threading.Thread):
             self.DBPassword = (self.config.get('Output', 'DBPassword', raw=True))
             self.DBHost = (self.config.get('Output', 'DBHost', raw=True))
             self.DBName = (self.config.get('Output', 'DBName', raw=True))
+            self.DBPort = (self.config.getint('Output', 'DBPort', raw=True))
             self.DBTable = (self.config.get('Output', 'DBTable', raw=True))
             
+            
+            self.mytemperature_model_parameters = TEMPERATURE_MODEL_PARAMETERS['sapm'][self.mytemperature_model]
             self.sandia_modules = pvlib.pvsystem.retrieve_sam('cecmod')
             self.sandia_module = self.sandia_modules[self.mymodule] # is "LG Electronics Inc. LG335E1C-A5" in sam-library-cec-modules-2019-03-05.csv
             self.cec_inverters = pvlib.pvsystem.retrieve_sam('cecinverter')
@@ -188,7 +198,7 @@ class dwdforecast(threading.Thread):
             #self.cec_inverter = self.cec_inverters['SMA_America__SB10000TL_US__240V_']  # is "SMA America: SB10000TL-US [240V]" in sam-library-cec-inverters-2019-03-05.csv         
  
             if (self.DBOutput ==1):
-                self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
+                self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, port = self.DBPort, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
                 self.cur = self.db.cursor() 
                 print ("I have set my DB connection")
         except Exception as ErrorConfigParse:
@@ -214,6 +224,8 @@ class dwdforecast(threading.Thread):
                                         inverter_parameters                         = self.cec_inverter,
                                         albedo                                      = self.myalbedo,
                                         modules_per_string                          = self.myNumPanels,
+                                        racking_model                               = "open_rack",
+                                        temperature_model_parameters                = self.mytemperature_model_parameters,
                                         strings_per_inverter                        = self.myNumStrings)        
                 
                 
@@ -580,11 +592,11 @@ class dwdforecast(threading.Thread):
                         try:
                             if (pvlib.__version__ == "0.8.0"):
                                 self.myModelChain.run_model(self.mc_weather)                              
-                                print ("XXXXXXXXXXXXXXXXX 6")
                             elif (pvlib.__version__ == "0.7.2"):
-                                print ("Starting with myModelChain calculation with version 0.7.2 of pvlib... ")
-                                self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)
-                                print ("Done ...................")
+                                print ("Version 0.7.2 of pvlib is no longer supported")
+                                logging.error ("%s %s", ",Version 0.7.2 of pvlib is no longer supported : ", pvlib.__version__)
+                                break
+                                #self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)                              
                             else:
                                 print ("Trying an untested version of pvlib", pvlib.__version__)
                                 self.myModelChain.run_model(self.mc_weather)
