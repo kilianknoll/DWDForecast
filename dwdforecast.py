@@ -107,6 +107,10 @@
 # Update October 18 2020
 # Remove support for pvlib version older than 0.8.0
 # Added additional configuration parameter: TEMPERATURE_MODEL_PARAMETERS for proper pvlib 0.8 support 
+#
+# Update October 24 2020
+# Changed Field for mydatetime from "2020-11-03T16:00:00.000Z" to "2020-11-03 16:00:00.000" to work around issues during database commits for some DB-types
+# Added some more debugging statements to be able to trace potential inconsistencies in Pandas Dataframe length
 
 
 import urllib.request
@@ -198,9 +202,13 @@ class dwdforecast(threading.Thread):
             #self.cec_inverter = self.cec_inverters['SMA_America__SB10000TL_US__240V_']  # is "SMA America: SB10000TL-US [240V]" in sam-library-cec-inverters-2019-03-05.csv         
  
             if (self.DBOutput ==1):
-                self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, port = self.DBPort, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
-                self.cur = self.db.cursor() 
-                print ("I have set my DB connection")
+                try:
+                    self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, port = self.DBPort, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
+                    self.cur = self.db.cursor() 
+                    print ("I have set my DB connection")
+                except Exception as ErrorDBConnect:
+                    logging.error("%s %s",",Trying to connect to mariaDB failed:", ErrorDBConnect)
+                    print ("Unable to connect to database", ErrorDBConnect)
         except Exception as ErrorConfigParse:
             logging.error("%s %s",",GetURLForLatest Error getting data from the internet:", ErrorConfigParse)
             print ("Hit error during configparse ", ErrorConfigParse)
@@ -342,7 +350,7 @@ class dwdforecast(threading.Thread):
         #print ("values sind", values)
         try:
             cursor.execute(sql, values)
-            print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
+            #print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
         except mysql.connector.Error as error :
             #print("Routine addsingleRow2DB -Failed to update records to database: {}".format(error))
             logging.error("%s %s %s", loggerdate(), ",subroutine dwdweather, addsingleRow2DB ", error)
@@ -389,7 +397,7 @@ class dwdforecast(threading.Thread):
                     logging.debug("%s %s %s" ,",dwdforecast : -in if- time comparison :", self.mynewtime, self.lasttimecheck)
                     #print ("DWD Weather - we have found a new kml file that we will download - timestamp was :", self.mynewtime)
                     #print ("DWD Weather -  self.lasttimecheck was ", self.lasttimecheck)
-                    self.lasttimecheck = self.mynewtime
+                    self.lasttimecheck = self.mynewtime 
                     self.file_name = "temp1.gz"
                     self.out_file = "temp2.gz"
                     self.targetdir ="./"
@@ -398,18 +406,22 @@ class dwdforecast(threading.Thread):
                         # Download the file from `url` and save it locally under `self.file_name`:
                         with urllib.request.urlopen(self.url) as self.response, open(self.file_name, 'wb') as self.out_file:
                             shutil.copyfileobj(self.response, self.out_file)
+                            logging.debug("%s %s %s", ",subroutine dwdforecast shutil command execution : ", self.response, self.out_file)   
+                            
                         time.sleep(5)                                           #not sure if this gets rid of the access problems                  
                         with zipfile.ZipFile(self.file_name,"r") as zip_ref:
                             Myzipfilename = (zip_ref.namelist())
                             Myzipfilename = str(Myzipfilename[0])
-                            zip_ref.extractall(self.targetdir)    
-                        logging.debug("%s %s" ,",dwdforecast : -File that I extract is zipfile :", Myzipfilename)
+                            logging.debug("%s %s" ,",dwdforecast : -Starting File extraction from DWD download :", Myzipfilename)
+                            zip_ref.extractall(self.targetdir)          
+                        logging.debug("%s %s" ,",dwdforecast : -File that I extracted is zipfile :", Myzipfilename)
                         time.sleep(5)                                           #not sure if this gets rid of the access problems
                     except Exception as MyException:
                         logging.error("%s %s", ",subroutine dwdforecast exception getting the data from server : ", MyException)    
                     # =============================================================================
                     # Parsing DWD File content
-                    # =============================================================================                        
+                    # =============================================================================   
+                    logging.debug("%s %s" ,",dwdforecast : -Starting to parse the kml Data from ", Myzipfilename)
                     self.tree = ET.parse(Myzipfilename) 
                     self.root = self.tree.getroot()
                     self.root.tag     
@@ -437,6 +449,7 @@ class dwdforecast(threading.Thread):
                         print ("Zeit",i, " ", timevalue[i])
                         i = i+1
                     """
+                    logging.debug("%s %s", ",subroutine dwdforecast Number of Timestamps in kml file is : ", len(self.timevalue))
                         
                     for self.elem in self.tree.findall('./kml:Document/kml:Placemark',self.ns):                    #Position us at the Placemark
                         #print ("SUCERJH ", sucher)
@@ -509,6 +522,7 @@ class dwdforecast(threading.Thread):
                     # START PrintOutput
                     if (self.PrintOutput == 1):
                         try:
+                            logging.debug("%s" ,",dwdforecast : -Starting MOSMIX print output...")
                             self.cols = len(self.mosmixdata)
                             rows = 0
                             if self.cols:
@@ -521,11 +535,12 @@ class dwdforecast(threading.Thread):
                             self.MyWeathervalues = {}
         
                             print ("Here is the raw data  what we got from DWD :")
+                            
                             for j in range(self.rows):
                                 if (self.indexcounter_addrows >0):                                       #We are adding from the point onward - see self.indexcounter_addrows if check below
                                     #print ("counting indices", self.indexcounter_addrows)
-                                    self.MyWeathervalues.update({'mydatetime':self.mosmixdata[0][j]})
-                                    self.MyWeathervalues.update({'myTZtimestamp':self.mosmixdata[1][j]})
+                                    self.MyWeathervalues.update({'mydatetime':self.mosmixdata[0][j]})   # This is the following format: 2018-12-25T07:00:00.000Z 
+                                    self.MyWeathervalues.update({'myTZtimestamp':self.mosmixdata[1][j]}) #This is the following format: 2020-10-31 14:00:00.000
                                     self.MyWeathervalues.update({'Rad1h':self.mosmixdata[2][j]})
                                     self.MyWeathervalues.update({'TTT':self.mosmixdata[3][j]})
                                     self.MyWeathervalues.update({'PPPP':self.mosmixdata[4][j]})
@@ -536,9 +551,10 @@ class dwdforecast(threading.Thread):
                             logging.error ("%s %s", ",subroutine dwdforecast final exception : ", ErrorPrintOutput)
                     #------------------------------------------
                     # START Processing data for PVLIB
+                    logging.debug("%s" ,",dwdforecast : -Starting PVLIB processing ...")
                     try:      
                         
-                        self.mycolumns= {'mydatetime':np.array(self.mosmixdata[0]),'myTZtimestamp':np.array(self.mosmixdata[1]),'Rad1h':np.array(self.mosmixdata[2]),'TTT':np.array(self.mosmixdata[3]),'PPPP':np.array(self.mosmixdata[4]),'FF':np.array(self.mosmixdata[5])}
+                        self.mycolumns= {'mydatetime':np.array(self.mosmixdata[1]),'myTZtimestamp':np.array(self.mosmixdata[1]),'Rad1h':np.array(self.mosmixdata[2]),'TTT':np.array(self.mosmixdata[3]),'PPPP':np.array(self.mosmixdata[4]),'FF':np.array(self.mosmixdata[5])}
                         self.PandasDF= pd.DataFrame(data=self.mycolumns)
                         self.PandasDF.Rad1h = self.PandasDF.Rad1h.astype(float) #Need to ensure we get a float value from Rad1h
                         
@@ -555,6 +571,7 @@ class dwdforecast(threading.Thread):
                         
                         #Gathering time series from start - and end hours (240 rows):
                         self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz=self.mytimezone)
+                        logging.debug("%s %s", ",Length of the Pandas Timestamps: ", len(self.local_timestamp) )
                         
                         self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h
                         
@@ -569,7 +586,9 @@ class dwdforecast(threading.Thread):
                             self.local_unixtimestamp.append(time.mktime(self.local_timestamp[self.i].timetuple()))
                             self.i = self.i+1                      
                         self.PandasDF['mytimestamp'] = np.array(self.local_unixtimestamp)
-
+                        logging.debug("%s %s" ,",dwdforecast : -Pandas Dataframe length :",len(self.PandasDF.index) )
+                        
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...")
                         # =============================================================================
                         # STARTING  SOLAR POSITION AND ATMOSPHERIC MODELING
                         # =============================================================================
@@ -614,6 +633,7 @@ class dwdforecast(threading.Thread):
                         # =============================================================================                        
                         if (self.CSVOutput ==1):
                             try:
+                                logging.debug("%s" ,",dwdforecast : -Starting csv Output ...")
                                 self.mc_weatherANDPandasDF = pd.concat([ self.mc_weather,self.PandasDF],axis=1).reindex(self.PandasDF.index)
                                 #self.PandasDF.to_csv(self.CSVFile)
                                 self.mc_weatherANDPandasDF.to_csv(self.CSVFile)
@@ -622,6 +642,7 @@ class dwdforecast(threading.Thread):
                                 logging.error ("%s %s", ",subroutine dwdforecast  exception during CSVOutput : ", ErrorCSVOutput)
                         if (self.PrintOutput == 1):
                             try:
+                                logging.debug("%s" ,",dwdforecast : -Starting print output from pvlib results ...")
                                 print ("Here are the combined results from DWD - as well as PVLIB:")
                                 print (self.PandasDF)
                             except Exception as ErrorPrintOutput:
@@ -632,24 +653,31 @@ class dwdforecast(threading.Thread):
                         # STARTING  Database Processing
                         # =============================================================================
                         if (self.DBOutput == 1):
+                            logging.debug("%s" ,",dwdforecast : -Starting database output from pvlib results ...")
                             self.Databaselasttimestamp= self.findlastDBtimestamp(self.cur, self.DBTable)
                             
                             self.PandasDFFirstTimestamp = self.PandasDF['mytimestamp'].iloc[0]
                             self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, self.DBTable, int(self.PandasDFFirstTimestamp))
+                            logging.debug("%s %s" ,",dwdforecast : -Starting database output - Database_found_filetimestamp is : ",self.Database_found_filetimestamp  )
                             
                             self.indexcounter_addrows=0     #pure initialization
                             self.MyWeathervalues ={}
-                            for index, row in self.PandasDF.iterrows():
-                                self.PandasDFFirstTimestamp = row['mytimestamp']
-                                self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, self.DBTable, int(self.PandasDFFirstTimestamp))
-                                if (self.Database_found_filetimestamp ==0):
-                                    self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
-                                    self.addsingleRow2DB(self.cur, self.DBTable, self.MyWeathervalues)
-                                if (self.Database_found_filetimestamp == 1):                           #Meaning we found the timestamp and need to update from the point onward...
-                                    self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
-                                    #self.updatesingleRowinDB(self.cur, "dwd",
-                                    #self.updatesingleRowinDB(self.cur, "dwd", TTT, Rad1h, FF, PPPP, mytimestamp, Rad1Energy, ACSim, DCSim, CellTempSim)
-                                    self.updatesingleRowinDB(self.cur, self.DBTable, row['TTT'], row['Rad1h'], row['FF'], row['PPPP'], row['mytimestamp'], row['Rad1Energy'], row['ACSim'], row['DCSim'], row['CellTempSim'], row['Rad1wh'])
+                            try:
+                                for index, row in self.PandasDF.iterrows():
+                                    self.PandasDFFirstTimestamp = row['mytimestamp']
+                                    self.Database_found_filetimestamp = self.checkTimestampExistence(self.cur, self.DBTable, int(self.PandasDFFirstTimestamp))
+                                    if (self.Database_found_filetimestamp ==0):                             #Meaning we don´t have an entry for given timestamp in DB yet
+                                        logging.debug("%s %s" ,",dwdforecast : -Starting database addsingleRow2DB -timestamp is : ",row['mydatetime'])
+                                        self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
+                                        self.addsingleRow2DB(self.cur, self.DBTable, self.MyWeathervalues)
+                                    if (self.Database_found_filetimestamp == 1):                           #Meaning we found the timestamp and need to update the specific row with new values
+                                        logging.debug("%s %s" ,",dwdforecast : -Starting database updatesingleRowinDB -timestamp is : ",row['mydatetime'])
+                                        self.MyWeathervalues.update({'mydatetime':row['mydatetime'],'Rad1h':row['Rad1h'],'TTT':row['TTT'],'PPPP':row['PPPP'],'FF':row['FF'],'Rad1wh':row['Rad1wh'],'Rad1Energy':row['Rad1Energy'],'mytimestamp':row['mytimestamp'],'ACSim':row['ACSim'],'CellTempSim':row['CellTempSim'],'DCSim':row['DCSim']})
+                                        #self.updatesingleRowinDB(self.cur, "dwd",
+                                        #self.updatesingleRowinDB(self.cur, "dwd", TTT, Rad1h, FF, PPPP, mytimestamp, Rad1Energy, ACSim, DCSim, CellTempSim)
+                                        self.updatesingleRowinDB(self.cur, self.DBTable, row['TTT'], row['Rad1h'], row['FF'], row['PPPP'], row['mytimestamp'], row['Rad1Energy'], row['ACSim'], row['DCSim'], row['CellTempSim'], row['Rad1wh'])
+                            except Exception as ErrorDBCommit:
+                                print ("Error during database commit from dwdforecast :", ErrorDBCommit)
                         # =============================================================================                            
                         self.myTZtimestamp = connvertINTtimestamptoDWD(self.mynewtime)
                         logging.debug ("%s %s %s %s", ",Subroutine dwdforecast -we have used DWD file from time : ", self.mynewtime, " ", self.myTZtimestamp)
