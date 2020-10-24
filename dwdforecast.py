@@ -342,7 +342,7 @@ class dwdforecast(threading.Thread):
         #print ("values sind", values)
         try:
             cursor.execute(sql, values)
-            #print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
+            print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
         except mysql.connector.Error as error :
             #print("Routine addsingleRow2DB -Failed to update records to database: {}".format(error))
             logging.error("%s %s %s", loggerdate(), ",subroutine dwdweather, addsingleRow2DB ", error)
