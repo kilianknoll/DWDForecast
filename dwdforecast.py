@@ -111,6 +111,11 @@
 # Update October 24 2020
 # Changed Field for mydatetime from "2020-11-03T16:00:00.000Z" to "2020-11-03 16:00:00.000" to work around issues during database commits for some DB-types
 # Added some more debugging statements to be able to trace potential inconsistencies in Pandas Dataframe length
+#
+# Update October 29 2020
+# All Times are in UTC based on DWD definition:
+# https://www.dwd.de/DE/wetter/thema_des_tages/2019/10/23.html
+#
 
 
 import urllib.request
@@ -179,7 +184,7 @@ class dwdforecast(threading.Thread):
             self.mymodule = (self.config.get('SolarSystem', 'ModuleName', raw=True))
             self.mysimplemultiplicationfactor = (self.config.getfloat('SolarSystem', 'SimpleMultiplicationFactor', raw=True))
             self.TemperatureOffset = (self.config.getfloat('SolarSystem', 'TemperatureOffset', raw=True))
-            self.mytimezone = (self.config.get('SolarSystem', 'MyTimezone', raw=True))
+            self.mytimezone = (self.config.get('SolarSystem', 'MyTimezone', raw=True))                      #Currently unused
             self.sleeptime = (self.config.getint('Processing', 'Sleeptime', raw=True))
             
             self.PrintOutput = (self.config.getint('Output', 'PrintOutput', raw=True))
@@ -205,7 +210,7 @@ class dwdforecast(threading.Thread):
                 try:
                     self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, port = self.DBPort, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
                     self.cur = self.db.cursor() 
-                    print ("I have set my DB connection")
+                    #print ("I have set my DB connection")
                 except Exception as ErrorDBConnect:
                     logging.error("%s %s",",Trying to connect to mariaDB failed:", ErrorDBConnect)
                     print ("Unable to connect to database", ErrorDBConnect)
@@ -214,7 +219,7 @@ class dwdforecast(threading.Thread):
             print ("Hit error during configparse ", ErrorConfigParse)
         self.mypvliblocation   = Location(latitude  = self.mylatitude, 
                            longitude = self.mylongitude,
-                           tz        = self.mytimezone,
+                           tz        = 'UTC',               # Inputdata from DWD is in UTC - hence passing the same timezone info to pvlib
                             altitude = self.myaltitude)
         self.lasttimecheck = 1534800680.0                   # Dec 14th 2018 (pure initialization)
         self.myqueue = myqueue
@@ -238,8 +243,10 @@ class dwdforecast(threading.Thread):
                 
                 
         
-        print ("I am looking for data from DWD for the following station: ", self.mystation)
-        print ("I will be polling the following URL for the latest updates ", self.urlpath)
+        #print ("I am looking for data from DWD for the following station: ", self.mystation)
+        #print ("I will be polling the following URL for the latest updates ", self.urlpath)
+        logging.debug("%s %s","I am looking for data from DWD for the following station: ", self.mystation)
+        logging.debug("%s %s","I will be polling the following URL for the latest updates: ", self.urlpath)
 
     # Based on the user specified URL, find the latest file file with it´s timestamp 
     def GetURLForLatest(self,urlpath, ext=''):
@@ -347,10 +354,10 @@ class dwdforecast(threading.Thread):
             tablename, columns, values_template)
         # INSERT into TABLE (columname1, columnname2) VALUES (value1, value2)
         values = tuple(content[key] for key in keys)
-        #print ("values sind", values)
         try:
             cursor.execute(sql, values)
-            #print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
+            print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
+            logging.debug("%s %s %s %s %s", loggerdate(), ",dwdforecast In routine addsingleRow2DB - sqlstatement -values are ", sql, "....", values)
         except mysql.connector.Error as error :
             #print("Routine addsingleRow2DB -Failed to update records to database: {}".format(error))
             logging.error("%s %s %s", loggerdate(), ",subroutine dwdweather, addsingleRow2DB ", error)
@@ -360,9 +367,9 @@ class dwdforecast(threading.Thread):
         #print ("In Routine updatesingleRowinDB -mein update string ist", sql)
         try:
             cursor.execute(sql)
-            #print ("In subroutine updatesingleRowinDB -sql is : ", sql)
+            logging.debug("%s %s %s", loggerdate(), ",dwdforecast In routine addsingleRow2DB - sqlstatement -values are ", sql)
         except mysql.connector.Error as error :
-            logging.error("%s %s %s", loggerdate(), ",subroutine dwdweather, updatesingleRowinDB ", error)
+            logging.error("%s %s %s", loggerdate(), ",ERROR subroutine dwdweather, updatesingleRowinDB ", error)
             #print("Failed to update records to database: {}".format(error))
     
                         
@@ -372,7 +379,8 @@ class dwdforecast(threading.Thread):
             while not self.event.is_set():            #In case the main process wants to shut us down...
                 if (self.myinit== 0):                 #We populate the first timestamp to signal to main that we are up & running
                     temptimestamp = time.time()
-                    print ("From dwdforecast - initial queue population", temptimestamp)
+                    #print ("From dwdforecast - initial queue population", temptimestamp)
+                    logging.debug("%s %s %s", loggerdate(), ", dwdforecast - initial queue population : ", temptimestamp)
                     self.myqueue.put(temptimestamp)
                     self.myinit = 1
                 time.sleep(1)
@@ -383,8 +391,9 @@ class dwdforecast(threading.Thread):
                     self.mydownloadfiles, self.mynewtime = self.GetURLForLatest(self.urlpath, self.ext)
                     #print ("Downloadfiles = ", self.mydownloadfiles)
                     #print ("Timestamp    = ", self.mynewtime)
+                    logging.debug("%s %s %s", loggerdate(), ", dwdforecast - Downloadfiles : ", self.mydownloadfiles)
                 except Exception as ErrorReadFromDWD:
-                    logging.error("%s %s" ,",dwdforecast  :", ErrorReadFromDWD)
+                    logging.error("%s %s %s" ,loggerdate(),", dwdforecast  :", ErrorReadFromDWD)
             
                 self.myarray =[]
                 for self.file in self.mydownloadfiles:
@@ -392,7 +401,7 @@ class dwdforecast(threading.Thread):
                 self.temp_length = len(self.myarray)
                 self.url = self.myarray[self.temp_length-1]
 
-                logging.debug("%s %s %s",",dwdforecast : -BEFORE  if- time comparison :", self.mynewtime, self.lasttimecheck)                
+                logging.debug("%s %s %s %s",loggerdate(),",dwdforecast : -BEFORE  if- time comparison :", self.mynewtime, self.lasttimecheck)                
                 if (self.mynewtime > self.lasttimecheck):
                     logging.debug("%s %s %s" ,",dwdforecast : -in if- time comparison :", self.mynewtime, self.lasttimecheck)
                     #print ("DWD Weather - we have found a new kml file that we will download - timestamp was :", self.mynewtime)
@@ -555,40 +564,60 @@ class dwdforecast(threading.Thread):
                     try:      
                         
                         self.mycolumns= {'mydatetime':np.array(self.mosmixdata[1]),'myTZtimestamp':np.array(self.mosmixdata[1]),'Rad1h':np.array(self.mosmixdata[2]),'TTT':np.array(self.mosmixdata[3]),'PPPP':np.array(self.mosmixdata[4]),'FF':np.array(self.mosmixdata[5])}
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 1")
                         self.PandasDF= pd.DataFrame(data=self.mycolumns)
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 2")
                         self.PandasDF.Rad1h = self.PandasDF.Rad1h.astype(float) #Need to ensure we get a float value from Rad1h
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 3")
                         
                         self.PandasDF.FF = self.PandasDF.FF.astype(float)
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 4")
                         self.PandasDF.PPPP = self.PandasDF.PPPP.astype(float)
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 5")
                         self.PandasDF.TTT = self.PandasDF.TTT.astype(float)+self.TemperatureOffset
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 6")
                         self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h  #Converting from KJ/m² to Wh/m² -and adding as new column Rad1wh
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 7")
                         self.PandasDF.myTZtimestamp = pd.to_datetime(pd.Series(self.PandasDF.myTZtimestamp))
+                        logging.debug("%s" ,",dwdforecast : -Starting PANDAS processing ... 8")
+
+                        
                         # A horrific hack to get the time series working
                         self.first = self.PandasDF.myTZtimestamp.iloc[0]
+                        logging.debug("%s %s" ,",dwdforecast : -Starting PANDAS processing ... 9 ",self.first )
                         self.last  = self.PandasDF.myTZtimestamp.index[-1]
+                        logging.debug("%s %s" ,",dwdforecast : -Starting PANDAS processing ... 10",self.last)
                         self.last  = self.PandasDF.myTZtimestamp.iloc[self.last]
+                        logging.debug("%s %s" ,",dwdforecast : -Starting PANDAS processing ... 11",self.last)
                         
                         
                         #Gathering time series from start - and end hours (240 rows):
-                        self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz=self.mytimezone)
-                        logging.debug("%s %s", ",Length of the Pandas Timestamps: ", len(self.local_timestamp) )
+                        #self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz=self.mytimezone)
                         
-                        self.PandasDF['Rad1wh'] = 0.277778*self.PandasDF.Rad1h
+                        self.local_timestamp= pd.date_range(start=self.first, end=self.last, freq='1h',tz="UTC" )
+                        logging.debug("%s %s", ",dwdforecast : -Starting PANDAS processing ... 12 ", len(self.local_timestamp) )
+                        
                         
                         self.PandasDF['Rad1Energy'] = self.mysimplemultiplicationfactor*self.PandasDF.Rad1wh
+                        logging.debug("%s", ",dwdforecast : -Starting PANDAS processing ... 13 ")
                         
                         self.PandasDF.index = self.local_timestamp
+                        logging.debug("%s", ",dwdforecast : -Starting PANDAS processing ... 14 ")
+                        #self.PandasDF.index = self.PandasDF.myTZtimestamp
                         
                         #Now creating list of unixtimestamps
                         self.local_unixtimestamp= []
+                        logging.debug("%s", ",dwdforecast : -Starting PANDAS processing ... 15 ")
                         self.i = 0 
                         for self.elems in (self.local_timestamp):
                             self.local_unixtimestamp.append(time.mktime(self.local_timestamp[self.i].timetuple()))
-                            self.i = self.i+1                      
+                            self.i = self.i+1 
+                        logging.debug("%s", ",dwdforecast : -Starting PANDAS processing ... 16 ")
                         self.PandasDF['mytimestamp'] = np.array(self.local_unixtimestamp)
-                        logging.debug("%s %s" ,",dwdforecast : -Pandas Dataframe length :",len(self.PandasDF.index) )
+                        logging.debug("%s %s" ,",dwdforecast : -Starting PANDAS processing ... 17 Dataframe length :",len(self.PandasDF.index) )
                         
-                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...")
+                        
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...1")
                         # =============================================================================
                         # STARTING  SOLAR POSITION AND ATMOSPHERIC MODELING
                         # =============================================================================
@@ -596,38 +625,55 @@ class dwdforecast(threading.Thread):
                                                                                 latitude  = self.mylatitude,
                                                                                 longitude = self.mylongitude,
                                                                                 altitude  = self.myaltitude)
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...2")
                         self.myGHI =self.PandasDF.Rad1wh 
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...3")
                         # DNI and DHI calculation from GHI data
                         self.DNI = pvlib.irradiance.disc(ghi= self.PandasDF.Rad1wh, solar_zenith = self.solpos.zenith, datetime_or_doy = self.local_timestamp, pressure=self.PandasDF.PPPP, min_cos_zenith=0.9, max_zenith=80, max_airmass=12)
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...4")
                         #self.DHI = self.PandasDF.Rad1wh - self.DNI.dni*np.cos(np.radians(self.solpos.zenith.values))
                         self.DHI = pvlib.irradiance.erbs(ghi=self.PandasDF.Rad1wh, zenith= self.solpos.zenith, datetime_or_doy = self.local_timestamp, min_cos_zenith=0.9, max_zenith=80)
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...5")
                         #self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
                         self.dataheader= {'ghi': self.PandasDF.Rad1wh,'dni': self.DNI.dni,'dhi': self.DHI.dhi,'temp_air':self.PandasDF.TTT,'wind_speed':self.PandasDF.FF}
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...6")
                         self.mc_weather   = pd.DataFrame(data=self.dataheader)
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...7")
                         self.mc_weather.index =self.local_timestamp 
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...8")
                         #Simulating the PV system using pvlib modelchain 
                         self.myModelChain = ModelChain(self.mysolarsystem, self.mypvliblocation,aoi_model='no_loss',orientation_strategy="None",spectral_model='no_loss')
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...9")
                         #pvlib has changed their APIs between versions ... need to deal with it ...:
                         try:
+                            logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...10")
                             if (pvlib.__version__ == "0.8.0"):
-                                self.myModelChain.run_model(self.mc_weather)                              
+                                self.myModelChain.run_model(self.mc_weather)                      
+                                logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...11")
                             elif (pvlib.__version__ == "0.7.2"):
-                                print ("Version 0.7.2 of pvlib is no longer supported")
+                                #print ("Version 0.7.2 of pvlib is no longer supported")
+                                logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...12")
                                 logging.error ("%s %s", ",Version 0.7.2 of pvlib is no longer supported : ", pvlib.__version__)
                                 break
                                 #self.myModelChain.run_model(times=self.mc_weather.index, weather=self.mc_weather)                              
                             else:
-                                print ("Trying an untested version of pvlib", pvlib.__version__)
+                                #print ("Trying an untested version of pvlib", pvlib.__version__)
+                                logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...13")
                                 self.myModelChain.run_model(self.mc_weather)
                         except Exception as ErrorWeather:
-                            print ("Error after run_model", ErrorWeather, "Pvlib Version is : ", pvlib.__version__)
+                            logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...14")
+                            #print ("Error after run_model", ErrorWeather, "Pvlib Version is : ", pvlib.__version__)
                             logging.error ("%s %s %s", ",Error after run_model : ", ErrorWeather, pvlib.__version__)
-                        print ("After Weather check....")
+                        #print ("After Weather check....")
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...15")
                         self.PandasDF['ACSim']= self.myModelChain.ac
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...16")
                         self.PandasDF['CellTempSim']= self.myModelChain.cell_temperature
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...17")
                         #modelchain provides DC data too - but no doc was found for the other values below
                         #i_sc        v_oc          i_mp        v_mp         p_mp           i_x          i_xx
                         self.PandasDF['DCSim']= self.myModelChain.dc.p_mp
+                        logging.debug("%s" ,",dwdforecast : -ENDING pvlib calculations ...18")
                         # =============================================================================
                         # STARTING  Database Processing
                         # =============================================================================                        
@@ -638,7 +684,7 @@ class dwdforecast(threading.Thread):
                                 #self.PandasDF.to_csv(self.CSVFile)
                                 self.mc_weatherANDPandasDF.to_csv(self.CSVFile)
                             except Exception as ErrorCSVOutput:
-                                print ("Error Creating CSV Output", ErrorCSVOutput)
+                                #print ("Error Creating CSV Output", ErrorCSVOutput)
                                 logging.error ("%s %s", ",subroutine dwdforecast  exception during CSVOutput : ", ErrorCSVOutput)
                         if (self.PrintOutput == 1):
                             try:
@@ -652,6 +698,7 @@ class dwdforecast(threading.Thread):
                         # =============================================================================
                         # STARTING  Database Processing
                         # =============================================================================
+                        logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...19")
                         if (self.DBOutput == 1):
                             logging.debug("%s" ,",dwdforecast : -Starting database output from pvlib results ...")
                             self.Databaselasttimestamp= self.findlastDBtimestamp(self.cur, self.DBTable)
@@ -682,8 +729,8 @@ class dwdforecast(threading.Thread):
                         self.myTZtimestamp = connvertINTtimestamptoDWD(self.mynewtime)
                         logging.debug ("%s %s %s %s", ",Subroutine dwdforecast -we have used DWD file from time : ", self.mynewtime, " ", self.myTZtimestamp)
                     except Exception as ErrorDWDArray:
-                        print ("Error processing DWDArray", ErrorDWDArray)
                         logging.error ("%s %s", ",subroutine dwdforecast final exception : ", ErrorDWDArray)
+                        print ("Error processing DWDArray", ErrorDWDArray)
                     logging.debug("%s %s", "From dwdforecast - we have found a true commit and have updated the database at the following dwd time :", self.mynewtime)
                     time.sleep(self.sleeptime)          # We are putting in a sleep 
                     self.myqueue.put(self.mynewtime)
@@ -691,10 +738,10 @@ class dwdforecast(threading.Thread):
                     pass
                     #print("No new data.....")
                 time.sleep(self.sleeptime)              # We are pausing to not constantly cause internet traffic
-            print ("Thread is going down ...")
+            print ("Thread has finished")
     except Exception as ExceptionError:
             print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-            print ("XXX-Aus Subroutine dwdforecast -verrant ? ", ExceptionError)
+            print ("XXX- Subroutine dwdforecast - Final exception : ", ExceptionError)
             print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
             logging.error("%s %s", ",subroutine dwdforecast final exception : ", ExceptionError)
 
@@ -717,6 +764,10 @@ if __name__ == "__main__":
     #-----------------------------------------------------------------
     # START Queue (To read dwd values and populate them to database):
     try:
+        print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+        print ("Starting dwd forecast calculations. This may take a minute...")
+        print ("Please consult logging output dwd_debug.txt for more details ")
+        print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
         myQueue1 = queue.Queue()                                               
         myThread1= dwdforecast(myQueue1)                          
         myThread1.start()                                                             
@@ -747,7 +798,7 @@ if __name__ == "__main__":
                 time.sleep(1)
             time.sleep(60)
             myThread1.event.set()
-            print ("Closing thread & exiting")
+            print ("Main Routine is asking to close thread")
         except KeyboardInterrupt:
             #In case user hits CTRL-C 
             print (" Sub - User is trying to kill me ...  \n") 
