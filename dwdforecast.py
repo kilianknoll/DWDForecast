@@ -115,8 +115,10 @@
 # Update October 29 2020
 # All Times are in UTC based on DWD definition:
 # https://www.dwd.de/DE/wetter/thema_des_tages/2019/10/23.html
+# Update October 29 2020 -2
+# Made ProcessingConfiguration option a configuration setting in configuration.ini 
+# 
 #
-
 
 import urllib.request
 import shutil
@@ -186,6 +188,7 @@ class dwdforecast(threading.Thread):
             self.TemperatureOffset = (self.config.getfloat('SolarSystem', 'TemperatureOffset', raw=True))
             self.mytimezone = (self.config.get('SolarSystem', 'MyTimezone', raw=True))                      #Currently unused
             self.sleeptime = (self.config.getint('Processing', 'Sleeptime', raw=True))
+            self.ProcessingConfiguration = (self.config.get('Processing', 'ProcessingConfiguration', raw=True))
             
             self.PrintOutput = (self.config.getint('Output', 'PrintOutput', raw=True))
             self.CSVOutput = (self.config.getint('Output', 'CSVOutput', raw=True))
@@ -748,15 +751,19 @@ class dwdforecast(threading.Thread):
                     
 
 if __name__ == "__main__":
-
-    logging.basicConfig(filename="dwd_debug.txt",level=logging.DEBUG)
+    #Logging levels can be ERROR INFO DEBUG 
+    #Please change to debug in case you find any issues and consult dwd_debug.txt for more details
+    logging.basicConfig(filename="dwd_debug.txt",level=logging.ERROR)
     #
-    """
-    Interaction can be 'Simple' - or 'Complex'
-    Simple : Try to get weather data once only - then terminate
-    Complex : Start a seperate queue that continuously polls the DWD server on the internet to get updated data 
-    """
-    Interaction = 'Simple' #Interaction can be 'Simple' - or 'Complex'
+    try:
+        config = configparser.ConfigParser()
+        config.read('configuration.ini')
+        config.sections() 
+        ProcessingConfiguration = (config.get('Processing', 'ProcessingConfiguration', raw=True))
+    except Exception as ErrorReadconfig:
+        logging.error("%s %s", ",Main dwdforecast  exception : ", ErrorReadconfig)
+        ProcessingConfiguration = "Simple"             
+    Interaction = ProcessingConfiguration
     #
 
     
