@@ -112,13 +112,10 @@
 # Changed Field for mydatetime from "2020-11-03T16:00:00.000Z" to "2020-11-03 16:00:00.000" to work around issues during database commits for some DB-types
 # Added some more debugging statements to be able to trace potential inconsistencies in Pandas Dataframe length
 #
-# Update October 29 2020
-# All Times are in UTC based on DWD definition:
-# https://www.dwd.de/DE/wetter/thema_des_tages/2019/10/23.html
-# Update October 29 2020 -2
-# Made ProcessingConfiguration option a configuration setting in configuration.ini 
-# 
+# Update Feb 12 2023
+# Updates to work wiwth pvlib 0.9.4 and prepare for upcoming pvlib deprecations 
 #
+
 
 import urllib.request
 import shutil
@@ -186,9 +183,8 @@ class dwdforecast(threading.Thread):
             self.mymodule = (self.config.get('SolarSystem', 'ModuleName', raw=True))
             self.mysimplemultiplicationfactor = (self.config.getfloat('SolarSystem', 'SimpleMultiplicationFactor', raw=True))
             self.TemperatureOffset = (self.config.getfloat('SolarSystem', 'TemperatureOffset', raw=True))
-            self.mytimezone = (self.config.get('SolarSystem', 'MyTimezone', raw=True))                      #Currently unused
+            self.mytimezone = (self.config.get('SolarSystem', 'MyTimezone', raw=True))
             self.sleeptime = (self.config.getint('Processing', 'Sleeptime', raw=True))
-            self.ProcessingConfiguration = (self.config.get('Processing', 'ProcessingConfiguration', raw=True))
             
             self.PrintOutput = (self.config.getint('Output', 'PrintOutput', raw=True))
             self.CSVOutput = (self.config.getint('Output', 'CSVOutput', raw=True))
@@ -213,7 +209,7 @@ class dwdforecast(threading.Thread):
                 try:
                     self.db = mysql.connector.connect(user=self.DBUser ,passwd=self.DBPassword, host=self.DBHost, port = self.DBPort, database=self.DBName,autocommit=True)           #Connect string to the database - we are setting
                     self.cur = self.db.cursor() 
-                    #print ("I have set my DB connection")
+                    print ("I have set my DB connection")
                 except Exception as ErrorDBConnect:
                     logging.error("%s %s",",Trying to connect to mariaDB failed:", ErrorDBConnect)
                     print ("Unable to connect to database", ErrorDBConnect)
@@ -222,7 +218,7 @@ class dwdforecast(threading.Thread):
             print ("Hit error during configparse ", ErrorConfigParse)
         self.mypvliblocation   = Location(latitude  = self.mylatitude, 
                            longitude = self.mylongitude,
-                           tz        = 'UTC',               # Inputdata from DWD is in UTC - hence passing the same timezone info to pvlib
+                           tz        = self.mytimezone,
                             altitude = self.myaltitude)
         self.lasttimecheck = 1534800680.0                   # Dec 14th 2018 (pure initialization)
         self.myqueue = myqueue
@@ -246,10 +242,8 @@ class dwdforecast(threading.Thread):
                 
                 
         
-        #print ("I am looking for data from DWD for the following station: ", self.mystation)
-        #print ("I will be polling the following URL for the latest updates ", self.urlpath)
-        logging.debug("%s %s","I am looking for data from DWD for the following station: ", self.mystation)
-        logging.debug("%s %s","I will be polling the following URL for the latest updates: ", self.urlpath)
+        print ("I am looking for data from DWD for the following station: ", self.mystation)
+        print ("I will be polling the following URL for the latest updates ", self.urlpath)
 
     # Based on the user specified URL, find the latest file file with it´s timestamp 
     def GetURLForLatest(self,urlpath, ext=''):
@@ -357,10 +351,10 @@ class dwdforecast(threading.Thread):
             tablename, columns, values_template)
         # INSERT into TABLE (columname1, columnname2) VALUES (value1, value2)
         values = tuple(content[key] for key in keys)
+        #print ("values sind", values)
         try:
             cursor.execute(sql, values)
-            print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
-            logging.debug("%s %s %s %s %s", loggerdate(), ",dwdforecast In routine addsingleRow2DB - sqlstatement -values are ", sql, "....", values)
+            #print ("In routine addsingleRow2DB - sqlstatement und Werte sind: ", sql, ".....", values) 
         except mysql.connector.Error as error :
             #print("Routine addsingleRow2DB -Failed to update records to database: {}".format(error))
             logging.error("%s %s %s", loggerdate(), ",subroutine dwdweather, addsingleRow2DB ", error)
@@ -370,9 +364,9 @@ class dwdforecast(threading.Thread):
         #print ("In Routine updatesingleRowinDB -mein update string ist", sql)
         try:
             cursor.execute(sql)
-            logging.debug("%s %s %s", loggerdate(), ",dwdforecast In routine addsingleRow2DB - sqlstatement -values are ", sql)
+            #print ("In subroutine updatesingleRowinDB -sql is : ", sql)
         except mysql.connector.Error as error :
-            logging.error("%s %s %s", loggerdate(), ",ERROR subroutine dwdweather, updatesingleRowinDB ", error)
+            logging.error("%s %s %s", loggerdate(), ",subroutine dwdweather, updatesingleRowinDB ", error)
             #print("Failed to update records to database: {}".format(error))
     
                         
@@ -382,8 +376,7 @@ class dwdforecast(threading.Thread):
             while not self.event.is_set():            #In case the main process wants to shut us down...
                 if (self.myinit== 0):                 #We populate the first timestamp to signal to main that we are up & running
                     temptimestamp = time.time()
-                    #print ("From dwdforecast - initial queue population", temptimestamp)
-                    logging.debug("%s %s %s", loggerdate(), ", dwdforecast - initial queue population : ", temptimestamp)
+                    print ("From dwdforecast - initial queue population", temptimestamp)
                     self.myqueue.put(temptimestamp)
                     self.myinit = 1
                 time.sleep(1)
@@ -394,9 +387,8 @@ class dwdforecast(threading.Thread):
                     self.mydownloadfiles, self.mynewtime = self.GetURLForLatest(self.urlpath, self.ext)
                     #print ("Downloadfiles = ", self.mydownloadfiles)
                     #print ("Timestamp    = ", self.mynewtime)
-                    logging.debug("%s %s %s", loggerdate(), ", dwdforecast - Downloadfiles : ", self.mydownloadfiles)
                 except Exception as ErrorReadFromDWD:
-                    logging.error("%s %s %s" ,loggerdate(),", dwdforecast  :", ErrorReadFromDWD)
+                    logging.error("%s %s" ,",dwdforecast  :", ErrorReadFromDWD)
             
                 self.myarray =[]
                 for self.file in self.mydownloadfiles:
@@ -404,7 +396,7 @@ class dwdforecast(threading.Thread):
                 self.temp_length = len(self.myarray)
                 self.url = self.myarray[self.temp_length-1]
 
-                logging.debug("%s %s %s %s",loggerdate(),",dwdforecast : -BEFORE  if- time comparison :", self.mynewtime, self.lasttimecheck)                
+                logging.debug("%s %s %s",",dwdforecast : -BEFORE  if- time comparison :", self.mynewtime, self.lasttimecheck)                
                 if (self.mynewtime > self.lasttimecheck):
                     logging.debug("%s %s %s" ,",dwdforecast : -in if- time comparison :", self.mynewtime, self.lasttimecheck)
                     #print ("DWD Weather - we have found a new kml file that we will download - timestamp was :", self.mynewtime)
@@ -412,7 +404,7 @@ class dwdforecast(threading.Thread):
                     self.lasttimecheck = self.mynewtime 
                     self.file_name = "temp1.gz"
                     self.out_file = "temp2.gz"
-                    self.targetdir ="./"
+                    self.targetdir ="./KML"
                     try:
                         time.sleep(10)                                          #Assumption is - we see the file on the DWD server - but it has not yet been copied over
                         # Download the file from `url` and save it locally under `self.file_name`:
@@ -645,12 +637,13 @@ class dwdforecast(threading.Thread):
                         self.mc_weather.index =self.local_timestamp 
                         logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...8")
                         #Simulating the PV system using pvlib modelchain 
-                        self.myModelChain = ModelChain(self.mysolarsystem, self.mypvliblocation,aoi_model='no_loss',orientation_strategy="None",spectral_model='no_loss')
+                        #self.myModelChain = ModelChain(self.mysolarsystem, self.mypvliblocation,aoi_model='no_loss',orientation_strategy="None",spectral_model='no_loss')
+                        self.myModelChain = ModelChain(self.mysolarsystem, self.mypvliblocation,aoi_model='no_loss',spectral_model='no_loss')
                         logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...9")
                         #pvlib has changed their APIs between versions ... need to deal with it ...:
                         try:
                             logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...10")
-                            if (pvlib.__version__ == "0.8.0"):
+                            if (pvlib.__version__ == "0.9.4"):
                                 self.myModelChain.run_model(self.mc_weather)                      
                                 logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...11")
                             elif (pvlib.__version__ == "0.7.2"):
@@ -669,13 +662,13 @@ class dwdforecast(threading.Thread):
                             logging.error ("%s %s %s", ",Error after run_model : ", ErrorWeather, pvlib.__version__)
                         #print ("After Weather check....")
                         logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...15")
-                        self.PandasDF['ACSim']= self.myModelChain.ac
+                        self.PandasDF['ACSim']= self.myModelChain.results.ac
                         logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...16")
-                        self.PandasDF['CellTempSim']= self.myModelChain.cell_temperature
+                        self.PandasDF['CellTempSim']= self.myModelChain.results.cell_temperature
                         logging.debug("%s" ,",dwdforecast : -Starting pvlib calculations ...17")
                         #modelchain provides DC data too - but no doc was found for the other values below
                         #i_sc        v_oc          i_mp        v_mp         p_mp           i_x          i_xx
-                        self.PandasDF['DCSim']= self.myModelChain.dc.p_mp
+                        self.PandasDF['DCSim']= self.myModelChain.results.dc.p_mp
                         logging.debug("%s" ,",dwdforecast : -ENDING pvlib calculations ...18")
                         # =============================================================================
                         # STARTING  Database Processing
@@ -741,29 +734,25 @@ class dwdforecast(threading.Thread):
                     pass
                     #print("No new data.....")
                 time.sleep(self.sleeptime)              # We are pausing to not constantly cause internet traffic
-            print ("Thread has finished")
+            print ("Thread is going down ...")
     except Exception as ExceptionError:
             print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-            print ("XXX- Subroutine dwdforecast - Final exception : ", ExceptionError)
+            print ("XXX-Aus Subroutine dwdforecast -verrant ? ", ExceptionError)
             print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
             logging.error("%s %s", ",subroutine dwdforecast final exception : ", ExceptionError)
 
                     
 
 if __name__ == "__main__":
-    #Logging levels can be ERROR INFO DEBUG 
-    #Please change to debug in case you find any issues and consult dwd_debug.txt for more details
-    logging.basicConfig(filename="dwd_debug.txt",level=logging.ERROR)
+
+    logging.basicConfig(filename="dwd_debug.txt",level=logging.DEBUG)
     #
-    try:
-        config = configparser.ConfigParser()
-        config.read('configuration.ini')
-        config.sections() 
-        ProcessingConfiguration = (config.get('Processing', 'ProcessingConfiguration', raw=True))
-    except Exception as ErrorReadconfig:
-        logging.error("%s %s", ",Main dwdforecast  exception : ", ErrorReadconfig)
-        ProcessingConfiguration = "Simple"             
-    Interaction = ProcessingConfiguration
+    """
+    Interaction can be 'Simple' - or 'Complex'
+    Simple : Try to get weather data once only - then terminate
+    Complex : Start a seperate queue that continuously polls the DWD server on the internet to get updated data 
+    """
+    Interaction = 'Simple' #Interaction can be 'Simple' - or 'Complex'
     #
 
     
@@ -771,10 +760,6 @@ if __name__ == "__main__":
     #-----------------------------------------------------------------
     # START Queue (To read dwd values and populate them to database):
     try:
-        print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-        print ("Starting dwd forecast calculations. This may take a minute...")
-        print ("Please consult logging output dwd_debug.txt for more details ")
-        print ("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
         myQueue1 = queue.Queue()                                               
         myThread1= dwdforecast(myQueue1)                          
         myThread1.start()                                                             
@@ -805,7 +790,7 @@ if __name__ == "__main__":
                 time.sleep(1)
             time.sleep(60)
             myThread1.event.set()
-            print ("Main Routine is asking to close thread")
+            print ("Closing thread & exiting")
         except KeyboardInterrupt:
             #In case user hits CTRL-C 
             print (" Sub - User is trying to kill me ...  \n") 

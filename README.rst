@@ -24,7 +24,7 @@ Forecast data contains:
 
 
 
-It has been tested with Python version 3.6.2, 3.7.3 
+It has been tested with Python version 3.10.5, 3.9.2 (OLD: 3.6.2, 3.7.3)
 
 Tested with 
 ~~~~~~~~~~~~~~~~
